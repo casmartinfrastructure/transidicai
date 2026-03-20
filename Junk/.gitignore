@@ -1,0 +1,5 @@
+# Ignore logs inside feature_logging
+src/the_everything_app/user_input_logging/logs/
+
+# Ignore the virtual environment
+venv/

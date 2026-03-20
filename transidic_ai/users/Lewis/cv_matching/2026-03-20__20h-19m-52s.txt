@@ -1,0 +1,22 @@
+TRANSIDIC AI
+Developed by : Transidic Studio
+Cloud Service Employed : Code++
+User: Lewis
+Session: 2026-03-20__20h-15m-41s
+
+#############Log1###########
+Date: 2026-03-20
+Time: 20:15:41
+Input: I am looking for a Civil Engineering job
+
+Top Matching CVs:
+
+1. CV: Lewis Mujana.pdf
+   Candidate Name: Lewis Mujana
+   Similarity to Input: 0.504
+
+Matching Timestamp: 2026-03-20 20:18:07
+Matched Cloud Service: Transidic Ai
+Similarity: 0.191
+
+
