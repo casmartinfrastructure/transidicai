@@ -248,7 +248,9 @@ def main():
 
     user_name = safe_input("Enter the user name: ").strip()
 
-    cloud_csv = os.path.join("cloud_services", "cloud_services.csv")
+    # ✅ UPDATED PATH HERE ONLY
+    cloud_csv = os.path.join("users", user_name, "cloud_services", "cloud_services.csv")
+
     cloud_services, cloud_embeddings = load_cloud_services(cloud_csv, model, user_name)
 
     txt_file, user_inputs, input_timestamps = load_user_inputs(user_name)

@@ -1,6 +1,0 @@
-USER DETAILS
-=====================
-Name: Lewis
-Unique ID: 2b71b1f3
-Encryption Key: LE-TNCVW
-Created At: 2026-03-20 15:50:27
