@@ -335,12 +335,12 @@ def main():
 
     with open(txt_file, "w", encoding="utf-8") as f:
         f.write("**THE EVERYTHING APP**\n")
-        f.write("Developed by : Transidic Studio\n")
+        f.write("Developed by : Transidic Startup Studio\n")
         f.write("Cloud Service Employed : Code++\n\n")
         f.write("**INVOICE**\n")
         f.write(f"Invoice No: {invoice_no}\n")
         f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-        f.write("Cloud Service : Bidwise\n")
+        f.write("Cloud Service : Swift Bill\n")
         f.write(f"Client        : {encrypted_client}\n")
         f.write("Note: For security reasons, client names are encrypted to protect confidentiality.\n\n")
         f.write(format_header() + "\n")
@@ -357,8 +357,9 @@ def main():
         f.write(summary_table_border() + "\n\n")
 
         # Explanatory clauses unchanged
-        f.write("**IMPORTANT CLARIFICATIONS**\n")
-        f.write("• Payment of all invoices is respectfully requested within fourteen (14) days "
+        f.write("**IMPORTANT CLARIFICATIONS**\n\n")
+        f.write("•**Payments can be made via ECOCASH using this short code *151*2*2*001637*AMOUNT#**\n\n")
+        f.write("• Payment of all invoices is respectfully requested within two (2) days "
                 "from the date of issuance. We appreciate your prompt attention to this matter.\n\n")
         f.write("• Cloud Amount (Cloud Amt): Represents the hourly fee payable to the cloud service "
                 "provider for the execution, processing, and operational delivery of the services rendered.\n\n")

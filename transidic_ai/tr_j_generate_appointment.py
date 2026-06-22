@@ -6,11 +6,15 @@ from collections import defaultdict
 import tkinter as tk
 from tkinter import filedialog
 
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Image,
+    Table, TableStyle
+)
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import inch
-from reportlab.lib.enums import TA_JUSTIFY
+from reportlab.lib.enums import TA_JUSTIFY, TA_CENTER
+from reportlab.lib import colors
 
 from openpyxl import Workbook, load_workbook
 
@@ -20,7 +24,7 @@ from openpyxl import Workbook, load_workbook
 WHATSAPP_NUMBER = "+263 785 261 617"
 
 # -----------------------------
-# GLOBAL (set after username input)
+# GLOBAL
 # -----------------------------
 USER_FOLDER = None
 ROOT_APPOINTMENTS_FOLDER = None
@@ -129,74 +133,203 @@ def parse_invoice(file_path):
     return cloud_data, consultant_data
 
 # -----------------------------
-# BUILD LETTER CONTENT
+# PARSE HOURS INPUT FILE
+# Extract exact entity name -> estimated hours
 # -----------------------------
-def build_letter_flowables(entity_name, tasks, total_cost, appointment_id, entity_type, client_key, appointment_time):
+def parse_hours_file(file_path):
+    """
+    Parses a TXT file with entries like:
+
+    1. Valentine Mujana (Valentine Mujana.pdf)
+       Match Score: 0.330
+       Experience Level: senior
+       Task Complexity: low
+       Estimated Hours: 5.68 hrs
+
+    Returns:
+        {
+            "Valentine Mujana": 5.68,
+            "Tinashe Chimusasa": 7.76,
+            ...
+        }
+
+    Also stores the filename inside brackets without extension
+    so cloud services can also match if their invoice name matches
+    the filename rather than the visible display name.
+    """
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    lines = content.splitlines()
+    hours_map = {}
+    current_name = None
+    current_file_name = None
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Match lines like:
+        # 1. Valentine Mujana (Valentine Mujana.pdf)
+        name_match = re.match(r"^\d+\.\s+(.*?)\s+\((.*?)\)\s*$", stripped)
+        if name_match:
+            current_name = name_match.group(1).strip()
+            current_file_name = os.path.splitext(name_match.group(2).strip())[0].strip()
+            continue
+
+        # Match lines like:
+        # Estimated Hours: 5.68 hrs
+        hours_match = re.match(r"^Estimated Hours:\s*([\d.]+)\s*hrs?$", stripped, re.IGNORECASE)
+        if hours_match and current_name:
+            try:
+                hours_value = float(hours_match.group(1))
+            except:
+                hours_value = 0.0
+
+            hours_map[current_name] = hours_value
+
+            if current_file_name:
+                hours_map[current_file_name] = hours_value
+
+            current_name = None
+            current_file_name = None
+
+    return hours_map
+
+# -----------------------------
+# APPLY HOURS MULTIPLIER
+# Multiplies invoice totals by exact matched hours
+# -----------------------------
+def apply_hours_multiplier(entity_data, hours_map):
+    """
+    entity_data format:
+        {
+            "Name A": {"tasks": [...], "total": 100.0},
+            "Name B": {"tasks": [...], "total": 200.0}
+        }
+
+    If exact name exists in hours_map:
+        new_total = old_total * hours
+
+    If no match found:
+        total remains unchanged
+    """
+    for entity_name, data in entity_data.items():
+        if entity_name in hours_map:
+            data["total"] = data["total"] * hours_map[entity_name]
+    return entity_data
+
+# -----------------------------
+# FORMAL LETTER BUILDER (HEADER REMOVED)
+# -----------------------------
+def build_letter_flowables(entity_name, tasks, total_cost, appointment_id,
+                           entity_type, client_key, appointment_time):
+
     styles = getSampleStyleSheet()
 
     heading_style = ParagraphStyle(
         "heading",
         parent=styles["Heading3"],
-        spaceBefore=8,
-        spaceAfter=4
+        spaceBefore=10,
+        spaceAfter=6,
+        textColor=colors.black
     )
 
     body_style = ParagraphStyle(
         "body",
         parent=styles["Normal"],
-        spaceAfter=10,
+        spaceAfter=8,
         leading=16,
-        alignment=TA_JUSTIFY
+        alignment=TA_JUSTIFY,
+        fontSize=10.5
+    )
+
+    footer_style = ParagraphStyle(
+        "footer",
+        parent=styles["Normal"],
+        alignment=TA_CENTER,
+        fontSize=9,
+        textColor=colors.grey
     )
 
     entity_label = "Cloud Service" if entity_type == "cloud" else "Consultant"
     elements = []
 
-    deadline = appointment_time + timedelta(hours=48)
+    deadline = appointment_time + timedelta(minutes=15)
 
-    elements.append(Paragraph(f"Client Key: <b>{client_key}</b>", body_style))
-    elements.append(Paragraph(f"Appointment Reference: <b>{appointment_id}</b>", body_style))
-    elements.append(Paragraph(f"Appointed {entity_label}: <b>{entity_name}</b>", body_style))
-    elements.append(Paragraph(f"Appointment Date & Time: <b>{appointment_time.strftime('%Y-%m-%d %H:%M:%S')}</b>", body_style))
-    elements.append(Paragraph(f"Deadline (48 hours from appointment): <b>{deadline.strftime('%Y-%m-%d %H:%M:%S')}</b>", body_style))
-    elements.append(Spacer(1, 8))
+    # -----------------------------
+    # REFERENCE TABLE (FORMAL BLOCK)
+    # -----------------------------
+    ref_table = [
+        ["Client Key", client_key],
+        ["Appointment Reference", appointment_id],
+        ["Appointed Entity", entity_name],
+        ["Entity Type", entity_label],
+        ["Appointment Time", appointment_time.strftime("%Y-%m-%d %H:%M:%S")],
+        ["Response Deadline", deadline.strftime("%Y-%m-%d %H:%M:%S")]
+    ]
 
-    elements.append(Paragraph(f"Congratulations {entity_name}!", heading_style))
+    table = Table(ref_table, colWidths=[180, 300])
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.black),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("PADDING", (0, 0), (-1, -1), 6),
+    ]))
 
-    elements.append(Paragraph(
-        "We are delighted to invite you to collaborate with our vibrant and forward-thinking innovation ecosystem. "
-        "You have been selected to participate in exciting solution development opportunities within The Constructaxis Smart Infrastructure Ecosystem.",
-        body_style
-    ))
+    elements.append(table)
+    elements.append(Spacer(1, 12))
 
-    elements.append(Spacer(1, 8))
-    elements.append(Paragraph("Assigned Tasks", heading_style))
+    # -----------------------------
+    # BODY
+    # -----------------------------
+    elements.append(Paragraph(f"Dear {entity_name},", heading_style))
+    elements.append(Paragraph("Appointment Confirmation", heading_style))
+
+    appointment_text = f"""
+    In accordance with the On-Demand Procurement Platform Participation Agreement, we are pleased to notify you that you have been selected for the Procurement Request(s) listed below.<br/><br/>
+    Kindly accept or decline this appointment within <b>15 minutes</b> of receiving this notification.<br/><br/>
+    <b>Acceptance:</b> Further instructions will be issued.<br/>
+    <b>Decline:</b> No action required.<br/>
+    <b>No Response:</b> Automatically treated as declined.<br/><br/>
+    <b>Payment Terms:</b> The stated amount represents the total payable for task completion and excludes operational costs unless otherwise agreed in writing.<br/><br/>
+    All services are executed under the Transidic Startup Studio Service Agreement.
+    """
+
+    elements.append(Paragraph(appointment_text, body_style))
+
+    elements.append(Spacer(1, 10))
+    elements.append(Paragraph("Procurement Request(s)", heading_style))
 
     for idx, task in enumerate(tasks, start=1):
-        if task:
-            elements.append(Paragraph(f"{idx}. <b>{task}</b>", body_style))
+        elements.append(Paragraph(f"{idx}. {task}", body_style))
 
-    elements.append(Spacer(1, 8))
-    elements.append(Paragraph(f"Total Compensation (Hourly Basis): <b>${total_cost:.2f}</b>", body_style))
+    elements.append(Spacer(1, 10))
+    elements.append(Paragraph(f"Total Offer Amount: <b>${total_cost:.2f}</b>", heading_style))
 
-    elements.append(Spacer(1, 12))
-    elements.append(Paragraph("Kind regards,", body_style))
-    elements.append(Paragraph("Constructaxis Cloud Administrator", body_style))
-    elements.append(Paragraph("+263 785 261 617", body_style))
+    elements.append(Spacer(1, 15))
+
+    # -----------------------------
+    # SIGNATURE
+    # -----------------------------
+    elements.append(Paragraph("Yours faithfully,", body_style))
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph("Transidic Startup Studio Private Limited", body_style))
+    elements.append(Paragraph("WhatsApp: +263 785 261 617", footer_style))
+    elements.append(Paragraph("Email: transidicstudio@gmail.com", footer_style))
 
     return elements
 
 # -----------------------------
-# SAVE PDF
+# SAVE PDF (TOP LOGO REMOVED)
 # -----------------------------
 def save_pdf(folder, name, appointment_id, client_key, entity_type, flowables):
     safe_name = re.sub(r"[^\w\- ]", "", name).replace(" ", "_")
     safe_type = "Cloud_Service" if entity_type == "cloud" else "Consultant"
 
-    file_path = os.path.join(
-        folder,
-        f"{appointment_id}_{safe_type}_{safe_name}.pdf"
-    )
+    file_path = os.path.join(folder, f"{appointment_id}_{safe_type}_{safe_name}.pdf")
 
     doc = SimpleDocTemplate(
         file_path,
@@ -208,13 +341,8 @@ def save_pdf(folder, name, appointment_id, client_key, entity_type, flowables):
     )
 
     elements = []
-
-    if LOGO_PATH and os.path.exists(LOGO_PATH):
-        img = Image(LOGO_PATH, width=2.5 * inch, height=1.25 * inch)
-        elements.append(img)
-        elements.append(Spacer(1, 15))
-
     elements.extend(flowables)
+
     doc.build(elements)
 
 # -----------------------------
@@ -243,7 +371,7 @@ def update_excel(date_folder, appointment_id, entity_type, entity_name, client_k
     wb.save(file_path)
 
 # -----------------------------
-# CREATE FOLDERS (USER-BASED)
+# FOLDERS
 # -----------------------------
 def setup_folders(client_key):
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -260,7 +388,7 @@ def setup_folders(client_key):
     return client_folder, cloud_folder, consultant_folder
 
 # -----------------------------
-# FILE PICKER
+# FILE PICKERS
 # -----------------------------
 def select_invoice_file():
     root = tk.Tk()
@@ -270,8 +398,16 @@ def select_invoice_file():
         filetypes=[("Text files","*.txt")]
     )
 
+def select_hours_file():
+    root = tk.Tk()
+    root.withdraw()
+    return filedialog.askopenfilename(
+        title="Select Hours/Matching TXT File",
+        filetypes=[("Text files","*.txt")]
+    )
+
 # -----------------------------
-# USER INPUT + INIT PATHS
+# USER INIT
 # -----------------------------
 def initialize_user(username):
     global USER_FOLDER, ROOT_APPOINTMENTS_FOLDER, LOGO_PATH
@@ -283,15 +419,24 @@ def initialize_user(username):
 # -----------------------------
 # MAIN
 # -----------------------------
-def main(invoice_path):
+def main(invoice_path, hours_file_path=None):
     client_key = extract_client_key(invoice_path)
     print("Client:", client_key)
 
     cloud_data, consultant_data = parse_invoice(invoice_path)
 
+    # -----------------------------------------
+    # NEW: Parse hours file and multiply totals
+    # -----------------------------------------
+    if hours_file_path and os.path.exists(hours_file_path):
+        hours_map = parse_hours_file(hours_file_path)
+
+        # Apply exact-name matching to BOTH cloud and consultant offers
+        cloud_data = apply_hours_multiplier(cloud_data, hours_map)
+        consultant_data = apply_hours_multiplier(consultant_data, hours_map)
+
     client_folder, cloud_folder, consultant_folder = setup_folders(client_key)
 
-    # ✅ SINGLE RUN TIMESTAMP (NEW APPOINTMENT BATCH)
     run_timestamp = datetime.now()
 
     cloud_counter = 1
@@ -345,13 +490,27 @@ if __name__ == "__main__":
 
     initialize_user(username)
 
+    # Optional CLI usage:
+    # python script.py invoice.txt hours.txt
     if len(sys.argv) > 1:
         invoice_file = sys.argv[1]
     else:
         print("📂 Select invoice file...")
         invoice_file = select_invoice_file()
 
-    if invoice_file and os.path.exists(invoice_file):
-        main(invoice_file)
+    if not invoice_file or not os.path.exists(invoice_file):
+        print("❌ No invoice file selected.")
+        sys.exit()
+
+    if len(sys.argv) > 2:
+        hours_file = sys.argv[2]
     else:
-        print("❌ No file selected.")
+        print("📂 Select hours/matching file...")
+        hours_file = select_hours_file()
+
+    if hours_file and os.path.exists(hours_file):
+        main(invoice_file, hours_file)
+    else:
+        # Still runs if hours file not selected, preserving existing behavior
+        print("⚠️ No hours file selected. Running with original invoice totals.")
+        main(invoice_file, None)
